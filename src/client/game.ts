@@ -29,16 +29,18 @@ const StartGame = (parent: string) => {
 
 // Self-hosted fonts are declared `font-display: block` in game.css and only start
 // loading once we request them. Phaser rasterises text into a canvas at creation
-// time, so if the scene draws before Fraunces / IBM Plex Mono are decoded, the
-// numeral and every system line flash a system-sans fallback and never recover
-// (Phaser doesn't re-render text on a late font load). We therefore force each face
-// to load, wait on document.fonts.ready, and only then boot the game. A short
-// timeout guards against a font that never resolves so we never hang the webview.
+// time, so if the scene draws before Baloo 2 / Nunito are decoded, the Day numeral
+// and every label flash a system-sans fallback and never recover (Phaser doesn't
+// re-render text on a late font load). We therefore force each face to load, wait on
+// document.fonts.ready, and only then boot the game. A short timeout guards against a
+// font that never resolves so we never hang the webview. Baloo 2 (800) = display,
+// Nunito (700/900) = all labels; Fraunces/Plex Mono are retained in the bundle but
+// no longer requested.
 async function bootWhenFontsReady(parent: string) {
   const fonts = [
-    '900 64px "Fraunces"',
-    '400 24px "IBM Plex Mono"',
-    '700 24px "IBM Plex Mono"',
+    '800 50px "Baloo 2"',
+    '700 13px "Nunito"',
+    '900 11px "Nunito"',
   ];
   try {
     if (document.fonts && typeof document.fonts.load === 'function') {

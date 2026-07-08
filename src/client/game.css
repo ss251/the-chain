@@ -15,8 +15,9 @@
   font-display: block;
 }
 
-/* IBM Plex Mono — the instrument panel of a vigil: countdown, link count, every
-   system line. Regular + Bold as discrete static instances. */
+/* IBM Plex Mono — legacy instrument-panel face. No longer referenced by the game
+   (the Lantern Festival pass moved every system line to Nunito), but the files stay
+   in the bundle so nothing 404s and the face can be restored without a re-upload. */
 @font-face {
   font-family: 'IBM Plex Mono';
   src: url('fonts/ibm-plex-mono-400.woff2') format('woff2');
@@ -28,6 +29,35 @@
   font-family: 'IBM Plex Mono';
   src: url('fonts/ibm-plex-mono-700.woff2') format('woff2');
   font-weight: 700;
+  font-style: normal;
+  font-display: block;
+}
+
+/* ── The Lantern Festival type system ──────────────────────────────────────────
+   Baloo 2 (ExtraBold 800) is the storybook DISPLAY face: the Day numeral, the
+   countdown digits, and the button label — chunky, warm, rounded. Nunito (Bold 700
+   + Black 900) carries EVERY label: the state line, keeper names, the CHAIN eyebrow,
+   the KEEPERS TODAY roster, and the lantern name painted on the paper. Both are OFL,
+   self-hosted (Devvit's webview can't fetch a CDN at runtime), and preloaded before
+   the game boots so text never flashes a system-sans fallback. */
+@font-face {
+  font-family: 'Baloo 2';
+  src: url('fonts/baloo2-800.woff2') format('woff2');
+  font-weight: 800;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Nunito';
+  src: url('fonts/nunito-700.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Nunito';
+  src: url('fonts/nunito-900.woff2') format('woff2');
+  font-weight: 900;
   font-style: normal;
   font-display: block;
 }
