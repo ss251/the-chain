@@ -2,9 +2,11 @@ import { Scene } from 'phaser';
 import * as Phaser from 'phaser';
 import type { ChainStateDTO, ContributeResponse, InitResponse } from '../../shared/api';
 
-// GREY-BOX for the 48h cake spike: rectangles + text only. No art, no juice yet.
-// It exists to answer one question — is the shared, once-a-day, one-tap loop legible
-// and does it create social pull? Molten-Kintsugi visuals come only after that's proven.
+// The Chain's single scene: shared once-a-day, one-tap loop, rendered code-only
+// (Phaser shapes/tweens/particles — no image assets). Juice beats live here: the
+// pour FX on contributing, the keepers roster, the opening ring-by-ring recap,
+// and the cold danger blink. The shatter sequence (Beat D) is still to be built
+// and tuned in a live playtest.
 
 const VOID = 0x0b0b10;
 const EMBER = 0xff6a00;
