@@ -97,7 +97,7 @@ export async function getState(now: number): Promise<ChainStateDTO> {
     num(K.deadline, now + DEFAULT_DAY_MS),
   ]);
   const count = await redis.zCard(K.daySet(day));
-  return { chainNo, streak, day, goal, count, deadline, dayMs, now };
+  return { chainNo, streak, day, goal, count, deadline, dayMs, now, dev: PLAYTEST };
 }
 
 // Place a link. Returns whether this was the user's FIRST link today (dedup proof:

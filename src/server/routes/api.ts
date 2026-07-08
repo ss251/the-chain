@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { reddit } from '@devvit/web/server';
 import type { ContributeResponse, ErrorResponse, InitResponse } from '../../shared/api';
 import {
+  PLAYTEST,
   contribute,
   devForceRollover,
   devReset,
@@ -50,28 +51,31 @@ api.post('/contribute', async (c) => {
   }
 });
 
-// --- DEV endpoints (grey-box only; removed before publish) ---
+// --- DEV endpoints: only registered in PLAYTEST builds, so a production
+// (PLAYTEST=false) deploy leaves /api/dev/* completely unrouted (404). ---
 
-api.post('/dev/rollover', async (c) => {
-  const now = Date.now();
-  await devForceRollover(now);
-  const state = await getState(now);
-  return c.json<InitResponse>({
-    type: 'init',
-    ...state,
-    username: null,
-    youContributed: false,
+if (PLAYTEST) {
+  api.post('/dev/rollover', async (c) => {
+    const now = Date.now();
+    await devForceRollover(now);
+    const state = await getState(now);
+    return c.json<InitResponse>({
+      type: 'init',
+      ...state,
+      username: null,
+      youContributed: false,
+    });
   });
-});
 
-api.post('/dev/reset', async (c) => {
-  const now = Date.now();
-  await devReset(now);
-  const state = await getState(now);
-  return c.json<InitResponse>({
-    type: 'init',
-    ...state,
-    username: null,
-    youContributed: false,
+  api.post('/dev/reset', async (c) => {
+    const now = Date.now();
+    await devReset(now);
+    const state = await getState(now);
+    return c.json<InitResponse>({
+      type: 'init',
+      ...state,
+      username: null,
+      youContributed: false,
+    });
   });
-});
+}

@@ -191,13 +191,15 @@ export class Game extends Scene {
       () => void this.place()
     );
 
-    // --- DEV controls (grey-box only) ---
-    this.smallButton(width * 0.5 - 90, height * 0.965, 'DEV: rollover', () =>
-      void this.dev('/api/dev/rollover')
-    );
-    this.smallButton(width * 0.5 + 90, height * 0.965, 'DEV: reset', () =>
-      void this.dev('/api/dev/reset')
-    );
+    // --- DEV controls: only rendered in PLAYTEST builds (server sends dev:true) ---
+    if (this.state?.dev) {
+      this.smallButton(width * 0.5 - 90, height * 0.965, 'DEV: rollover', () =>
+        void this.dev('/api/dev/rollover')
+      );
+      this.smallButton(width * 0.5 + 90, height * 0.965, 'DEV: reset', () =>
+        void this.dev('/api/dev/reset')
+      );
+    }
   }
 
   private button(
