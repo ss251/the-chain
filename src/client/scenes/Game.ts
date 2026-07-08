@@ -24,6 +24,9 @@ export class Game extends Scene {
   private serverNow = 0;
   private serverDeadline = 0;
   private fetchedAt = 0;
+  // crown of the monument (top of the stack) in current layout — where a link lands
+  private crownX = 0;
+  private crownY = 0;
 
   constructor() {
     super('Game');
@@ -31,6 +34,17 @@ export class Game extends Scene {
 
   create() {
     this.cameras.main.setBackgroundColor(VOID);
+
+    // A tiny soft dot used for ember particles — no art assets exist, so we bake a
+    // texture at runtime and tint it in the heat palette.
+    if (!this.textures.exists('spark')) {
+      const g = this.add.graphics();
+      g.fillStyle(0xffffff, 1);
+      g.fillCircle(4, 4, 4);
+      g.generateTexture('spark', 8, 8);
+      g.destroy();
+    }
+
     this.root = this.add.container(0, 0);
 
     void this.refresh();
@@ -70,8 +84,94 @@ export class Game extends Scene {
     if (this.busy || this.state?.youContributed) return;
     this.busy = true;
     const data = await this.api<ContributeResponse>('/api/contribute', 'POST');
-    if (data && data.type === 'contribute') this.ingest(data);
+    if (data && data.type === 'contribute') {
+      this.ingest(data);
+      // Only the FIRST link of the day earns the pour — a repeat tap is a no-op.
+      if (data.added) this.playPourFX();
+    }
     this.busy = false;
+  }
+
+  // Beat A — the most-repeated moment, the one a solo judge is guaranteed to feel.
+  // A molten link drops onto the crown, lands with a hit (camera shake + squash),
+  // throws embers, and cools white -> ember -> deep red -> basalt on camera. FX live
+  // on the scene (not inside `root`), so the 3s poll's teardown never kills them
+  // mid-flight; each object self-destroys when its tween completes.
+  private playPourFX() {
+    const x = this.crownX;
+    const yTarget = this.crownY - 8;
+    const width = 150;
+
+    const flash = this.add
+      .rectangle(x, yTarget - 90, width, 12, 0xffffff)
+      .setOrigin(0.5)
+      .setDepth(20);
+
+    this.tweens.add({
+      targets: flash,
+      y: yTarget,
+      ease: 'Quart.easeIn',
+      delay: 120,
+      duration: 200,
+      onComplete: () => {
+        // impact: hit-stop feel via a hard shake + a squash on the whole monument
+        this.cameras.main.shake(150, 0.004);
+        this.tweens.add({
+          targets: this.root,
+          scaleX: 1.04,
+          scaleY: 0.94,
+          duration: 60,
+          yoyo: true,
+          ease: 'Back.easeOut',
+          onComplete: () => this.root.setScale(1),
+        });
+
+        // ember burst from the impact point
+        const emitter = this.add.particles(x, yTarget, 'spark', {
+          speed: { min: 40, max: 170 },
+          angle: { min: 200, max: 340 },
+          gravityY: 320,
+          lifespan: { min: 380, max: 900 },
+          scale: { start: 0.9, end: 0 },
+          alpha: { start: 1, end: 0 },
+          tint: [EMBER, AMBER],
+          emitting: false,
+        });
+        emitter.setDepth(19);
+        emitter.explode(18, x, yTarget);
+        this.time.delayedCall(1000, () => emitter.destroy());
+
+        // the reward: the poured link cools on camera over ~2.5s, then settles.
+        const cool = { t: 0 };
+        const from = Phaser.Display.Color.ValueToColor(0xffffff);
+        const via1 = Phaser.Display.Color.ValueToColor(EMBER);
+        const via2 = Phaser.Display.Color.ValueToColor(0x8a1a00);
+        const to = Phaser.Display.Color.ValueToColor(0x1a1a22);
+        this.tweens.add({
+          targets: cool,
+          t: 1,
+          duration: 2500,
+          ease: 'Sine.easeOut',
+          onUpdate: () => {
+            const c =
+              cool.t < 0.33
+                ? Phaser.Display.Color.Interpolate.ColorWithColor(from, via1, 33, cool.t * 100)
+                : cool.t < 0.66
+                  ? Phaser.Display.Color.Interpolate.ColorWithColor(via1, via2, 33, (cool.t - 0.33) * 100)
+                  : Phaser.Display.Color.Interpolate.ColorWithColor(via2, to, 34, (cool.t - 0.66) * 100);
+            flash.setFillStyle(Phaser.Display.Color.GetColor(c.r, c.g, c.b));
+          },
+          onComplete: () => {
+            this.tweens.add({
+              targets: flash,
+              alpha: 0,
+              duration: 350,
+              onComplete: () => flash.destroy(),
+            });
+          },
+        });
+      },
+    });
   }
 
   private async dev(path: string) {
@@ -154,6 +254,9 @@ export class Game extends Scene {
         .setOrigin(0.5);
       this.root.add(rect);
     }
+    // remember the crown (top of the stack) so the pour FX lands in the right place
+    this.crownX = cx;
+    this.crownY = baseY - shown * (ringH + gap);
     if (s.streak > maxShown) {
       label(cx, baseY - shown * (ringH + gap) - 14, `+${s.streak - maxShown}`, 14, `#${AMBER.toString(16)}`);
     }
