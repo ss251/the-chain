@@ -1,0 +1,58 @@
+{
+  "$schema": "https://developers.reddit.com/schema/config-file.v1.json",
+  "name": "the-chain-holds",
+  "post": {
+    "dir": "dist/client",
+    "entrypoints": {
+      "default": {
+        "inline": true,
+        "entry": "splash.html"
+      },
+      "game": {
+        "entry": "game.html"
+      }
+    }
+  },
+  "server": {
+    "dir": "dist/server",
+    "entry": "index.cjs"
+  },
+  "menu": {
+    "items": [
+      {
+        "label": "The Chain: new post",
+        "description": "Start a new Chain post",
+        "location": "subreddit",
+        "forUserType": "moderator",
+        "endpoint": "/internal/menu/post-create"
+      },
+      {
+        "label": "DEV: force day rollover",
+        "description": "Grey-box: end today now (hold or shatter)",
+        "location": "subreddit",
+        "forUserType": "moderator",
+        "endpoint": "/internal/menu/dev-rollover"
+      },
+      {
+        "label": "DEV: reset chain",
+        "description": "Grey-box: wipe back to Day 0 of Chain 1",
+        "location": "subreddit",
+        "forUserType": "moderator",
+        "endpoint": "/internal/menu/dev-reset"
+      }
+    ]
+  },
+  "forms": {
+    "exampleForm": "/internal/form/example-submit"
+  },
+  "triggers": {
+    "onAppInstall": "/internal/triggers/on-app-install"
+  },
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite build --watch"
+  },
+  "dev": {
+    "subreddit": "the_chain_holds_dev"
+  }
+}
