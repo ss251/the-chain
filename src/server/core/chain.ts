@@ -22,9 +22,18 @@ const K = {
   daySet: (day: number) => `chain:d:${day}`,
 };
 
-// GREY-BOX TIME MACHINE: a "day" is 5 minutes so a week of The Chain is a ~35-minute
-// playtest. Change DEFAULT_DAY_MS to 24h (86_400_000) for production.
-export const DEFAULT_DAY_MS = 5 * 60 * 1000;
+// PLAYTEST is the single switch for the whole app. Flip it to `true` before a
+// `devvit playtest` session to compress a "day" to 5 minutes (a week of The Chain
+// becomes a ~35-minute session) and to re-expose the dev rollover/reset controls.
+// It MUST be `false` for the submission build: production days are a real 24 hours,
+// and every dev surface (menu items, /api/dev/*, in-game buttons) reads this flag.
+// A boolean constant is used instead of process.env because Devvit's server runtime
+// does not reliably inject arbitrary env vars.
+export const PLAYTEST = false;
+
+const PROD_DAY_MS = 86_400_000; // 24h — production
+const PLAYTEST_DAY_MS = 5 * 60 * 1000; // 5m — grey-box time machine
+export const DEFAULT_DAY_MS = PLAYTEST ? PLAYTEST_DAY_MS : PROD_DAY_MS;
 const DEFAULT_GOAL = 3;
 const DAYSET_TTL_SECONDS = 60 * 60 * 24 * 3; // keep a few days of history for rollover
 
