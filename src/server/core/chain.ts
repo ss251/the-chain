@@ -10,7 +10,7 @@
 // (streak++/a ring is added) or SHATTER (new chain begins), then advance.
 
 import { redis } from '@devvit/web/server';
-import type { ChainStateDTO } from '../../shared/api';
+import type { ChainStateDTO, FallenChain } from '../../shared/api';
 
 const K = {
   chainNo: 'chain:no',
@@ -20,6 +20,11 @@ const K = {
   deadline: 'chain:deadline',
   dayMs: 'chain:cfg:dayms',
   daySet: (day: number) => `chain:d:${day}`,
+  // the graveyard: a zset of fallen-chain summaries, scored by chainNo (oldest-first)
+  fallen: 'chain:fallen',
+  // per-chain roster of every distinct keeper who ever placed in it — its cardinality
+  // is the "held by K keepers" epitaph number recorded when the chain shatters
+  chainKeepers: (chainNo: number) => `chain:keepers:${chainNo}`,
 };
 
 // PLAYTEST is the single switch for the whole app. Flip it to `true` before a
@@ -36,6 +41,8 @@ const PLAYTEST_DAY_MS = 5 * 60 * 1000; // 5m — grey-box time machine
 export const DEFAULT_DAY_MS = PLAYTEST ? PLAYTEST_DAY_MS : PROD_DAY_MS;
 const DEFAULT_GOAL = 3;
 const DAYSET_TTL_SECONDS = 60 * 60 * 24 * 3; // keep a few days of history for rollover
+const CHAIN_KEEPERS_TTL_SECONDS = 60 * 60 * 24 * 60; // refreshed daily while a chain lives
+const MAX_FALLEN = 5; // the DTO carries only the last few fallen chains
 
 async function num(key: string, fallback: number): Promise<number> {
   const v = await redis.get(key);
@@ -72,7 +79,14 @@ export async function rollover(now: number): Promise<void> {
     if (count >= goal) {
       streak += 1; // the chain held — a ring is added to the monument
     } else if (!shatteredThisBatch) {
-      chainNo += 1; // the chain shattered — a new chain begins
+      // the chain shattered. Before the reset, fuse the fallen chain into the
+      // graveyard so its rubble persists forever (DESIGN.md §7.3). Only chains that
+      // actually stood (held >=1 day) leave a mound — a 0-day chain is not a dynasty.
+      if (streak > 0) {
+        const keepers = await redis.zCard(K.chainKeepers(chainNo));
+        await recordFallen({ chainNo, days: streak, keepers });
+      }
+      chainNo += 1; // a new chain begins
       streak = 0;
       shatteredThisBatch = true;
     }
@@ -84,6 +98,32 @@ export async function rollover(now: number): Promise<void> {
   await redis.set(K.streak, String(streak));
   await redis.set(K.day, String(day));
   await redis.set(K.deadline, String(deadline));
+}
+
+// Push a fallen chain into the graveyard zset (scored by chainNo so reads come back
+// oldest-first) and trim to the last MAX_FALLEN.
+async function recordFallen(entry: FallenChain): Promise<void> {
+  await redis.zAdd(K.fallen, { member: JSON.stringify(entry), score: entry.chainNo });
+  const total = await redis.zCard(K.fallen);
+  if (total > MAX_FALLEN) {
+    // drop the oldest (lowest-scored) so only the most recent MAX_FALLEN remain
+    await redis.zRemRangeByRank(K.fallen, 0, total - MAX_FALLEN - 1);
+  }
+}
+
+// The graveyard, oldest-first. Malformed rows are skipped defensively.
+async function getFallen(): Promise<FallenChain[]> {
+  const rows = await redis.zRange(K.fallen, 0, -1, { by: 'rank' });
+  const out: FallenChain[] = [];
+  for (const r of rows) {
+    try {
+      const f = JSON.parse(r.member) as FallenChain;
+      if (typeof f.chainNo === 'number') out.push(f);
+    } catch {
+      // ignore a corrupt entry
+    }
+  }
+  return out;
 }
 
 const MAX_KEEPERS_SHOWN = 20;
@@ -112,7 +152,8 @@ export async function getState(now: number): Promise<ChainStateDTO> {
   ]);
   const count = await redis.zCard(K.daySet(day));
   const keepers = await todaysKeepers(now);
-  return { chainNo, streak, day, goal, count, deadline, dayMs, now, dev: PLAYTEST, keepers };
+  const fallen = await getFallen();
+  return { chainNo, streak, day, goal, count, deadline, dayMs, now, dev: PLAYTEST, keepers, fallen };
 }
 
 // DEDUP KEY = the server-authenticated Reddit username. `member` is always the
@@ -138,6 +179,11 @@ export async function contribute(
   if (existing === undefined || existing === null) {
     await redis.zAdd(K.daySet(day), { member, score: now });
     await redis.expire(K.daySet(day), DAYSET_TTL_SECONDS);
+    // fold this keeper into the current chain's lifetime roster (for the epitaph's
+    // "held by K keepers" count when it eventually falls). The zset dedups by member.
+    const chainNo = await num(K.chainNo, 1);
+    await redis.zAdd(K.chainKeepers(chainNo), { member, score: now });
+    await redis.expire(K.chainKeepers(chainNo), CHAIN_KEEPERS_TTL_SECONDS);
     added = true;
   }
   const state = await getState(now);
@@ -163,6 +209,12 @@ export async function devReset(now: number): Promise<void> {
   const day = await num(K.day, 0);
   for (let d = Math.max(0, day - 8); d <= day + 1; d++) {
     await redis.del(K.daySet(d));
+  }
+  // wipe the graveyard + any lingering per-chain rosters so a reset is a clean slate
+  const chainNo = await num(K.chainNo, 1);
+  await redis.del(K.fallen);
+  for (let n = 1; n <= chainNo + 1; n++) {
+    await redis.del(K.chainKeepers(n));
   }
   await redis.set(K.chainNo, '1');
   await redis.set(K.streak, '0');

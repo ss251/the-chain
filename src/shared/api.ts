@@ -2,6 +2,16 @@
 // The whole subreddit shares ONE streak: each "day", N distinct keepers must each
 // place their single link or the chain shatters to zero for everyone.
 
+// A chain that has fallen. The rubble never despawns (DESIGN.md §7.3 "the gold
+// remembers"): each fallen chain is rendered as a low mound of dark shards veined
+// with gold at the monument's base — oldest deepest — so a judge arriving cold
+// sees a place that has died and come back. Capped to the last few on the wire.
+export type FallenChain = {
+  chainNo: number; // which chain fell (Chain I, Chain II, ...)
+  days: number; // rings it held before it broke
+  keepers: number; // distinct keepers who ever placed in it
+};
+
 export type ChainStateDTO = {
   chainNo: number; // which chain we're on (increments on every shatter)
   streak: number; // days the current chain has held = rings on the monument
@@ -13,6 +23,7 @@ export type ChainStateDTO = {
   now: number; // server time, so the client can compute the countdown locally
   dev: boolean; // true only in PLAYTEST builds — gates the in-game dev controls
   keepers: string[]; // today's keepers, oldest-first — etched in gold on the monument
+  fallen: FallenChain[]; // the graveyard of past chains, oldest-first (capped)
 };
 
 export type InitResponse = ChainStateDTO & {
