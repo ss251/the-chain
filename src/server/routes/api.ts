@@ -29,6 +29,10 @@ api.get('/init', async (c) => {
 api.post('/contribute', async (c) => {
   const now = Date.now();
   try {
+    // Identity is resolved server-side from the authenticated session and used as
+    // the distinct-keeper dedup key (see contribute() in core/chain.ts). It is
+    // never trusted from the client, so the count cannot be spoofed. A logged-out
+    // tap resolves to null and is rejected below — it can never move the count.
     const username = (await reddit.getCurrentUsername()) ?? null;
     if (!username) {
       return c.json<ErrorResponse>(

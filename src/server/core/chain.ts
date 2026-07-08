@@ -100,6 +100,16 @@ export async function getState(now: number): Promise<ChainStateDTO> {
   return { chainNo, streak, day, goal, count, deadline, dayMs, now, dev: PLAYTEST };
 }
 
+// DEDUP KEY = the server-authenticated Reddit username. `member` is always the
+// value of `reddit.getCurrentUsername()` resolved on the server from the caller's
+// authenticated session (see routes/api.ts) — it is NEVER a client-supplied value,
+// so a webview cannot spoof a second identity to inflate the count. Distinctness
+// therefore genuinely holds, which is what makes the "impossible solo clear at N>=2"
+// thesis true. Username (not userId) is the chosen key because usernames are the
+// social proof of the game: each is etched in gold onto the ring its keeper placed
+// (DESIGN.md — "carve the people into the object"). userId would dedup identically
+// but could not be shown.
+//
 // Place a link. Returns whether this was the user's FIRST link today (dedup proof:
 // tapping again returns added=false and does not move the count).
 export async function contribute(
