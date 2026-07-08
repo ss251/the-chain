@@ -1,8 +1,42 @@
+/* Self-hosted fonts — Devvit's webview cannot fetch external CDNs at runtime, so
+   these ship in the bundle (public/fonts -> dist/client/fonts) and are referenced
+   relatively. Do not swap for a Google Fonts <link>; a system-sans fallback would
+   murder the Molten Kintsugi identity. */
+
+/* Fraunces — one variable file carrying opsz (9–144), wght (100–900), SOFT, WONK.
+   We drive weight + optical size per-use via font-variation-settings. Used for the
+   DAY numeral and headlines: carved-but-alive, warm, wonky, human gravity. */
+@font-face {
+  font-family: 'Fraunces';
+  src: url('fonts/fraunces-variable.woff2') format('woff2-variations');
+  font-weight: 100 900;
+  font-stretch: 100%;
+  font-style: normal;
+  font-display: block;
+}
+
+/* IBM Plex Mono — the instrument panel of a vigil: countdown, link count, every
+   system line. Regular + Bold as discrete static instances. */
+@font-face {
+  font-family: 'IBM Plex Mono';
+  src: url('fonts/ibm-plex-mono-400.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  src: url('fonts/ibm-plex-mono-700.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+}
+
 body {
   margin: 0;
   padding: 0;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #0f0f0f;
+  color: #ede6da;
+  background-color: #0b0b10;
 }
 
 #app {

@@ -27,6 +27,35 @@ const StartGame = (parent: string) => {
   return new Game({ ...config, parent });
 };
 
+// Self-hosted fonts are declared `font-display: block` in game.css and only start
+// loading once we request them. Phaser rasterises text into a canvas at creation
+// time, so if the scene draws before Fraunces / IBM Plex Mono are decoded, the
+// numeral and every system line flash a system-sans fallback and never recover
+// (Phaser doesn't re-render text on a late font load). We therefore force each face
+// to load, wait on document.fonts.ready, and only then boot the game. A short
+// timeout guards against a font that never resolves so we never hang the webview.
+async function bootWhenFontsReady(parent: string) {
+  const fonts = [
+    '900 64px "Fraunces"',
+    '400 24px "IBM Plex Mono"',
+    '700 24px "IBM Plex Mono"',
+  ];
+  try {
+    if (document.fonts && typeof document.fonts.load === 'function') {
+      await Promise.race([
+        Promise.all([
+          ...fonts.map((f) => document.fonts.load(f)),
+          document.fonts.ready,
+        ]),
+        new Promise((resolve) => setTimeout(resolve, 4000)),
+      ]);
+    }
+  } catch (err) {
+    console.error('font preload failed, booting with fallbacks', err);
+  }
+  StartGame(parent);
+}
+
 document.addEventListener('DOMContentLoaded', () => {
-  StartGame('game-container');
+  void bootWhenFontsReady('game-container');
 });
