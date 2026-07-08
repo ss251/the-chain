@@ -27,6 +27,8 @@ export class Game extends Scene {
   // crown of the monument (top of the stack) in current layout — where a link lands
   private crownX = 0;
   private crownY = 0;
+  // the opening recap (monument assembles ring-by-ring) plays once, on first paint
+  private hasPlayedRecap = false;
 
   constructor() {
     super('Game');
@@ -230,9 +232,15 @@ export class Game extends Scene {
       return t;
     };
 
+    // On the FIRST paint of an already-standing chain, replay its whole history in
+    // ~1s: the rings rise from the base and the day numeral ticks up in step, so a
+    // judge is handed the stakes before reading a word. Subsequent polls render
+    // instantly (guarded by hasPlayedRecap).
+    const doRecap = !this.hasPlayedRecap && s.streak > 1;
+
     // --- header: chain # + day numeral ---
     label(cx, height * 0.08, `CHAIN #${s.chainNo}`, 18, `#${GOLD.toString(16)}`);
-    label(cx, height * 0.16, `DAY ${s.streak}`, 64, INK, false);
+    const dayLabel = label(cx, height * 0.16, `DAY ${s.streak}`, 64, INK, false);
 
     // --- the monument: one ring per surviving day, stacked upward ---
     const maxShown = 16;
@@ -240,6 +248,7 @@ export class Game extends Scene {
     const baseY = height * 0.62;
     const ringH = 12;
     const gap = 3;
+    const stagger = 60;
     for (let i = 0; i < shown; i++) {
       const w = 150 - i * 6;
       const col = Phaser.Display.Color.Interpolate.ColorWithColor(
@@ -249,10 +258,35 @@ export class Game extends Scene {
         i
       );
       const tint = danger ? ASH : Phaser.Display.Color.GetColor(col.r, col.g, col.b);
+      const finalY = baseY - i * (ringH + gap);
       const rect = this.add
-        .rectangle(cx, baseY - i * (ringH + gap), Math.max(30, w), ringH, tint)
+        .rectangle(cx, finalY, Math.max(30, w), ringH, tint)
         .setOrigin(0.5);
       this.root.add(rect);
+      if (doRecap) {
+        rect.setAlpha(0).setY(finalY + 10);
+        this.tweens.add({
+          targets: rect,
+          alpha: 1,
+          y: finalY,
+          delay: i * stagger,
+          duration: 220,
+          ease: 'Quad.easeOut',
+        });
+      }
+    }
+    if (doRecap) {
+      // tick DAY 0 -> streak in lockstep with the rings assembling
+      const ticker = { v: 0 };
+      this.tweens.add({
+        targets: ticker,
+        v: s.streak,
+        delay: 0,
+        duration: Math.max(300, shown * stagger),
+        ease: 'Quad.easeOut',
+        onUpdate: () => dayLabel.setText(`DAY ${Math.round(ticker.v)}`),
+        onComplete: () => dayLabel.setText(`DAY ${s.streak}`),
+      });
     }
     // remember the crown (top of the stack) so the pour FX lands in the right place
     this.crownX = cx;
@@ -306,6 +340,9 @@ export class Game extends Scene {
         void this.dev('/api/dev/reset')
       );
     }
+
+    // the recap is a one-time entrance; every later paint renders instantly
+    this.hasPlayedRecap = true;
   }
 
   // Etched-gold roster of today's keepers. This is the load-bearing mitigation for
