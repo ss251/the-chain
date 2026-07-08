@@ -29,6 +29,11 @@ export class Game extends Scene {
   private crownY = 0;
   // the opening recap (monument assembles ring-by-ring) plays once, on first paint
   private hasPlayedRecap = false;
+  // danger = the day is running out and the chain is still short; drives the cold
+  // colon-blink on the countdown (set in render, read in the 4x/sec tick)
+  private inDanger = false;
+  // the one-line hook fades in once per session, on the first paint
+  private hasShownHook = false;
 
   constructor() {
     super('Game');
@@ -197,7 +202,13 @@ export class Game extends Scene {
   }
 
   private tickCountdown() {
-    if (this.timerText) this.timerText.setText(Game.fmt(this.remainingMs()));
+    if (!this.timerText) return;
+    let txt = Game.fmt(this.remainingMs());
+    // Danger is cold, not red: the colon blinks like a failing instrument panel.
+    if (this.inDanger && Math.floor(this.time.now / 500) % 2 === 0) {
+      txt = txt.replace(/:/g, ' ');
+    }
+    this.timerText.setText(txt);
   }
 
   private render() {
@@ -211,6 +222,7 @@ export class Game extends Scene {
     const s = this.state;
     const held = s.count >= s.goal;
     const danger = !held && this.remainingMs() < s.dayMs * 0.4;
+    this.inDanger = danger;
 
     const label = (
       x: number,
@@ -343,6 +355,36 @@ export class Game extends Scene {
 
     // the recap is a one-time entrance; every later paint renders instantly
     this.hasPlayedRecap = true;
+
+    // First run: land the hook in one sentence, floating over the monument, then
+    // fade — so the concept reads even if the player skipped the splash. Lives on
+    // the scene (not root) so the 3s poll teardown can't kill it mid-fade.
+    if (!this.hasShownHook) {
+      this.hasShownHook = true;
+      this.showHookLine(width, height);
+    }
+  }
+
+  private showHookLine(width: number, height: number) {
+    const line = this.add
+      .text(width / 2, height * 0.44, 'One link a day, together,\nor the chain breaks for everyone.', {
+        fontFamily: 'Georgia, serif',
+        fontSize: 20,
+        color: INK,
+        align: 'center',
+        lineSpacing: 8,
+      })
+      .setOrigin(0.5)
+      .setAlpha(0)
+      .setDepth(30);
+    this.tweens.add({
+      targets: line,
+      alpha: 1,
+      duration: 600,
+      hold: 2600,
+      yoyo: true,
+      onComplete: () => line.destroy(),
+    });
   }
 
   // Etched-gold roster of today's keepers. This is the load-bearing mitigation for
