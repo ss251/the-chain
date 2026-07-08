@@ -17,6 +17,18 @@
     "dir": "dist/server",
     "entry": "index.cjs"
   },
+  "permissions": {
+    "redis": true,
+    "reddit": true
+  },
+  "scheduler": {
+    "tasks": {
+      "daily-chain": {
+        "endpoint": "/internal/scheduler/daily",
+        "cron": "0 0 * * *"
+      }
+    }
+  },
   "menu": {
     "items": [
       {
