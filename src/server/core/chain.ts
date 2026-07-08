@@ -86,6 +86,20 @@ export async function rollover(now: number): Promise<void> {
   await redis.set(K.deadline, String(deadline));
 }
 
+const MAX_KEEPERS_SHOWN = 20;
+
+// Today's keepers, in placement order (oldest first). Their usernames get etched in
+// gold on the monument — the social proof that makes the crowd visible to a lone
+// visitor (DESIGN.md). Capped so the payload stays small on a busy day.
+export async function todaysKeepers(now: number): Promise<string[]> {
+  await rollover(now);
+  const day = await num(K.day, 0);
+  const rows = await redis.zRange(K.daySet(day), 0, MAX_KEEPERS_SHOWN - 1, {
+    by: 'rank',
+  });
+  return rows.map((r) => r.member);
+}
+
 export async function getState(now: number): Promise<ChainStateDTO> {
   await rollover(now);
   const [chainNo, streak, goal, day, dayMs, deadline] = await Promise.all([
@@ -97,7 +111,8 @@ export async function getState(now: number): Promise<ChainStateDTO> {
     num(K.deadline, now + DEFAULT_DAY_MS),
   ]);
   const count = await redis.zCard(K.daySet(day));
-  return { chainNo, streak, day, goal, count, deadline, dayMs, now, dev: PLAYTEST };
+  const keepers = await todaysKeepers(now);
+  return { chainNo, streak, day, goal, count, deadline, dayMs, now, dev: PLAYTEST, keepers };
 }
 
 // DEDUP KEY = the server-authenticated Reddit username. `member` is always the

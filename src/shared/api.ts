@@ -12,6 +12,7 @@ export type ChainStateDTO = {
   dayMs: number; // length of a "day" (grey-box time machine)
   now: number; // server time, so the client can compute the countdown locally
   dev: boolean; // true only in PLAYTEST builds — gates the in-game dev controls
+  keepers: string[]; // today's keepers, oldest-first — etched in gold on the monument
 };
 
 export type InitResponse = ChainStateDTO & {

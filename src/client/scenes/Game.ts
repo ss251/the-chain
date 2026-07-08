@@ -162,6 +162,9 @@ export class Game extends Scene {
       label(cx, baseY, 'the ground is bare - pour the first link', 15, `#${ASH.toString(16)}`);
     }
 
+    // --- today's keepers: usernames etched in gold (social proof for a lone judge) ---
+    this.drawKeepers(width, height, s);
+
     // --- today's progress: count / goal ---
     const progColor = held ? `#${AMBER.toString(16)}` : danger ? '#ff5d60' : INK;
     label(cx, height * 0.70, `${s.count} / ${s.goal} LINKS TODAY`, 30, progColor);
@@ -199,6 +202,54 @@ export class Game extends Scene {
       this.smallButton(width * 0.5 + 90, height * 0.965, 'DEV: reset', () =>
         void this.dev('/api/dev/reset')
       );
+    }
+  }
+
+  // Etched-gold roster of today's keepers. This is the load-bearing mitigation for
+  // the game's biggest risk — a lone judge cannot see the crowd — so strangers'
+  // names (and then the judge's own, highlighted) make the community visible in a
+  // one-person session. Redrawn each poll, so new keepers appear without animation.
+  private drawKeepers(width: number, height: number, s: State) {
+    const keepers = s.keepers ?? [];
+    if (keepers.length === 0) return;
+
+    const trunc = (name: string) => (name.length > 12 ? name.slice(0, 11) + '…' : name);
+    const rightX = width - 14;
+    const maxRows = 8;
+    const rowH = 20;
+    const startY = height * 0.30;
+
+    const header = this.add
+      .text(rightX, startY - rowH, 'KEEPERS TODAY', {
+        fontFamily: 'monospace',
+        fontSize: 12,
+        color: `#${GOLD.toString(16)}`,
+      })
+      .setOrigin(1, 0.5);
+    this.root.add(header);
+
+    const rows = Math.min(keepers.length, maxRows);
+    for (let i = 0; i < rows; i++) {
+      const name = keepers[i]!;
+      const isYou = s.username != null && name === s.username;
+      const t = this.add
+        .text(rightX, startY + i * rowH, `${trunc(name)} ${isYou ? '·you' : ''}`.trim(), {
+          fontFamily: 'monospace',
+          fontSize: isYou ? 15 : 14,
+          color: isYou ? `#${AMBER.toString(16)}` : `#${GOLD.toString(16)}`,
+        })
+        .setOrigin(1, 0.5);
+      this.root.add(t);
+    }
+    if (keepers.length > maxRows) {
+      const more = this.add
+        .text(rightX, startY + rows * rowH, `+${keepers.length - maxRows} more`, {
+          fontFamily: 'monospace',
+          fontSize: 12,
+          color: `#${ASH.toString(16)}`,
+        })
+        .setOrigin(1, 0.5);
+      this.root.add(more);
     }
   }
 
