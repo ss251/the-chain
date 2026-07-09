@@ -25,6 +25,9 @@ const K = {
   // per-chain roster of every distinct keeper who ever placed in it — its cardinality
   // is the "held by K keepers" epitaph number recorded when the chain shatters
   chainKeepers: (chainNo: number) => `chain:keepers:${chainNo}`,
+  // per-chain count of SAVES: days completed only after the cold had set in
+  // (remaining < DANGER_FRACTION of the day). Rendered as gold notches on the rope.
+  chainSaves: (chainNo: number) => `chain:saves:${chainNo}`,
 };
 
 // PLAYTEST is the single switch for the whole app. Flip it to `true` before a
@@ -40,6 +43,10 @@ const PROD_DAY_MS = 86_400_000; // 24h — production
 const PLAYTEST_DAY_MS = 5 * 60 * 1000; // 5m — grey-box time machine
 export const DEFAULT_DAY_MS = PLAYTEST ? PLAYTEST_DAY_MS : PROD_DAY_MS;
 const DEFAULT_GOAL = 3;
+// The client's Beat B: the cold ramps over the final fraction of the day. A pour
+// that COMPLETES the goal inside this window is a save — keep in sync with the
+// `dangerT` computation in the client's render().
+const DANGER_FRACTION = 0.4;
 const DAYSET_TTL_SECONDS = 60 * 60 * 24 * 3; // keep a few days of history for rollover
 const CHAIN_KEEPERS_TTL_SECONDS = 60 * 60 * 24 * 60; // refreshed daily while a chain lives
 const MAX_FALLEN = 5; // the DTO carries only the last few fallen chains
@@ -84,7 +91,8 @@ export async function rollover(now: number): Promise<void> {
       // actually stood (held >=1 day) leave a mound — a 0-day chain is not a dynasty.
       if (streak > 0) {
         const keepers = await redis.zCard(K.chainKeepers(chainNo));
-        await recordFallen({ chainNo, days: streak, keepers });
+        const saves = await num(K.chainSaves(chainNo), 0);
+        await recordFallen({ chainNo, days: streak, keepers, saves });
       }
       chainNo += 1; // a new chain begins
       streak = 0;
@@ -153,7 +161,8 @@ export async function getState(now: number): Promise<ChainStateDTO> {
   const count = await redis.zCard(K.daySet(day));
   const keepers = await todaysKeepers(now);
   const fallen = await getFallen();
-  return { chainNo, streak, day, goal, count, deadline, dayMs, now, dev: PLAYTEST, keepers, fallen };
+  const saves = await num(K.chainSaves(chainNo), 0);
+  return { chainNo, streak, day, goal, count, deadline, dayMs, now, dev: PLAYTEST, keepers, fallen, saves };
 }
 
 // DEDUP KEY = the server-authenticated Reddit username. `member` is always the
@@ -185,6 +194,21 @@ export async function contribute(
     await redis.zAdd(K.chainKeepers(chainNo), { member, score: now });
     await redis.expire(K.chainKeepers(chainNo), CHAIN_KEEPERS_TTL_SECONDS);
     added = true;
+
+    // Beat C bookkeeping: if THIS pour completed the goal while the cold had
+    // already set in, the chain was saved from the brink — whip a gold notch
+    // onto the rope. Counted per chain; survives until the chain falls.
+    const [count, goal, deadline, dayMs] = await Promise.all([
+      redis.zCard(K.daySet(day)),
+      num(K.goal, DEFAULT_GOAL),
+      num(K.deadline, now),
+      num(K.dayMs, DEFAULT_DAY_MS),
+    ]);
+    if (count === goal && deadline - now < dayMs * DANGER_FRACTION) {
+      const saves = await num(K.chainSaves(chainNo), 0);
+      await redis.set(K.chainSaves(chainNo), String(saves + 1));
+      await redis.expire(K.chainSaves(chainNo), CHAIN_KEEPERS_TTL_SECONDS);
+    }
   }
   const state = await getState(now);
   return { state, added };
@@ -215,6 +239,7 @@ export async function devReset(now: number): Promise<void> {
   await redis.del(K.fallen);
   for (let n = 1; n <= chainNo + 1; n++) {
     await redis.del(K.chainKeepers(n));
+    await redis.del(K.chainSaves(n));
   }
   await redis.set(K.chainNo, '1');
   await redis.set(K.streak, '0');

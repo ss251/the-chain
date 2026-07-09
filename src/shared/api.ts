@@ -10,6 +10,7 @@ export type FallenChain = {
   chainNo: number; // which chain fell (Chain I, Chain II, ...)
   days: number; // rings it held before it broke
   keepers: number; // distinct keepers who ever placed in it
+  saves?: number; // times it was saved from the cold before it fell (gold notches)
 };
 
 export type ChainStateDTO = {
@@ -24,6 +25,10 @@ export type ChainStateDTO = {
   dev: boolean; // true only in PLAYTEST builds — gates the in-game dev controls
   keepers: string[]; // today's keepers, oldest-first — etched in gold on the monument
   fallen: FallenChain[]; // the graveyard of past chains, oldest-first (capped)
+  // Times THIS chain was saved from the brink: a day completed only after the cold
+  // had set in (Beat B). Each save whips a gold notch onto the rope — the kintsugi
+  // scar. The client renders up to the last few.
+  saves: number;
 };
 
 export type InitResponse = ChainStateDTO & {

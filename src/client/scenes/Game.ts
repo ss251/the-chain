@@ -1,5 +1,6 @@
 import { Scene } from 'phaser';
 import * as Phaser from 'phaser';
+import * as audio from '../audio';
 import type {
   ChainStateDTO,
   ContributeResponse,
@@ -18,11 +19,21 @@ import type {
 //
 // Beats: A (the lighting — a spark rises to today's lantern, its flame BLOOMS, the
 // keeper's name paints on), B (danger is COLD — bulbs go out, paper turns to bone,
-// the world grades cold, today's lantern flickers), and D (the rope snaps — it frays
-// at the sag, the lanterns fall with hand-rolled physics and gutter out, an epitaph,
-// then the new chain lights). All are seek-safe against the 3s poll.
+// the world grades cold, today's lantern flickers), C (the SAVE — the goal completes
+// inside the cold: a wave of warmth sweeps from today's lantern, the festival
+// relights, and the rope earns a gold notch — the kintsugi scar), and D (the rope
+// snaps — it frays at the sag, the lanterns fall with hand-rolled physics and gutter
+// out, an epitaph, then the new chain lights). All are seek-safe against the 3s poll.
 
 const INK = '#ede6da';
+// the opening recap's per-lantern rhythm — shared by the stagger, the plucks,
+// and the Day numeral's tick-up so they land together
+const RECAP_STAGGER = 110;
+// gold notches sit on the rope BETWEEN the lantern cords (lanterns hang at
+// t = 0.80 - i*0.094, today at 0.94): the newest notch lands between today's
+// lantern and the newest streak lantern, older ones recede one gap at a time
+const NOTCH_T0 = 0.87;
+const NOTCH_DT = 0.094;
 
 // ── The Lantern Festival palette (mirrors mk-art/target.html) ──────────────────
 // Warm values first, cold (danger) values second; `chill` (0..1) lerps between them.
@@ -156,6 +167,13 @@ export class Game extends Scene {
   // Beat D defer-swap: when a poll reveals the chain broke, we DON'T swap state; we
   // keep rendering the OLD chain, snap it, then swap. Polls are held meanwhile.
   private shattering = false;
+  // Beat C defer-swap: the goal completed inside the cold. Keep the cold scene, let
+  // the wave of warmth launch from today's lantern, swap to the warm state INSIDE
+  // the wave. Polls are held meanwhile (same discipline as Beat D).
+  private saving = false;
+  // positions of each lantern's flame (streak order + today last) for the recap
+  private recapPts: { x: number; y: number }[] = [];
+  private muteBtn: Phaser.GameObjects.Text | null = null;
   // countdown baseline: server deadline vs (serverNow + local elapsed)
   private serverNow = 0;
   private serverDeadline = 0;
@@ -272,6 +290,29 @@ export class Game extends Scene {
     });
     this.ashMotes.setDepth(-8);
 
+    // Sound: the context can only start from a user gesture (the splash's Enter
+    // lives in another document), so every tap primes it. The tiny ♪ toggle is
+    // scene-level — repositioned each render, never torn down by the poll.
+    this.input.on('pointerdown', () => audio.unlock());
+    this.muteBtn = this.add
+      .text(0, 0, '♪', {
+        fontFamily: FONT_LABEL,
+        fontStyle: '900',
+        fontSize: 13,
+        color: INK,
+      })
+      .setOrigin(1, 0.5)
+      .setDepth(60)
+      .setAlpha(audio.isMuted() ? 0.3 : 0.7)
+      .setInteractive({ useHandCursor: true });
+    this.muteBtn.on('pointerdown', () => {
+      audio.unlock();
+      audio.setMuted(!audio.isMuted());
+      this.muteBtn?.setAlpha(audio.isMuted() ? 0.3 : 0.7);
+      this.muteBtn?.setText(audio.isMuted() ? '♪ off' : '♪');
+    });
+    if (audio.isMuted()) this.muteBtn.setText('♪ off');
+
     void this.refresh();
 
     this.time.addEvent({ delay: 3000, loop: true, callback: () => void this.refresh() });
@@ -340,6 +381,21 @@ export class Game extends Scene {
       this.playShatter(prev, data);
       return;
     }
+    // Beat C defer-swap: the goal just completed while the world was visibly cold —
+    // the chain was SAVED. Keep the cold scene; the wave of warmth swaps it.
+    if (
+      prev &&
+      !this.shattering &&
+      !this.saving &&
+      data.chainNo === prev.chainNo &&
+      data.day === prev.day &&
+      prev.count < prev.goal &&
+      data.count >= data.goal &&
+      this.chill > 0.2
+    ) {
+      this.playSave(data);
+      return;
+    }
     this.state = data;
     this.serverNow = data.now;
     this.serverDeadline = data.deadline;
@@ -348,13 +404,14 @@ export class Game extends Scene {
   }
 
   private async refresh() {
-    if (this.shattering) return; // hold polls through the set-piece
+    if (this.shattering || this.saving) return; // hold polls through the set-pieces
     const data = await this.api<InitResponse>('/api/init', 'GET');
     if (data && data.type === 'init') this.ingest(data);
   }
 
   private async place() {
-    if (this.busy || this.pouring || this.shattering || this.state?.youContributed) return;
+    if (this.busy || this.pouring || this.shattering || this.saving || this.state?.youContributed)
+      return;
     this.busy = true;
     const data = await this.api<ContributeResponse>('/api/contribute', 'POST');
     if (data && data.type === 'contribute') {
@@ -398,6 +455,7 @@ export class Game extends Scene {
       onComplete: () => {
         spark.destroy();
         this.cameras.main.shake(100, 0.002);
+        audio.pour(data.count, data.goal); // the chord that grows, one note per link
         this.bloomLantern(data, M, tx, ty);
       },
     });
@@ -534,6 +592,130 @@ export class Game extends Scene {
     if (data && data.type === 'init') this.ingest(data);
   }
 
+  // ── Beat C: the save ──────────────────────────────────────────────────────────
+  // The chain was short in the cold, and this update completes the goal. The world
+  // must not merely refresh: a wave of warmth launches from today's lantern, the
+  // state swaps INSIDE the wave (the relight hides the redraw), the garlands breathe
+  // back, and the rope's newest gold notch glints. For the saving pourer the wave
+  // waits for Beat A's spark to land; for watchers (poll) it fires almost at once.
+  private playSave(next: State) {
+    this.saving = true;
+    const fromPour = 'added' in next && (next as ContributeResponse).added === true;
+    const delay = fromPour ? 1050 : 250;
+    const M = this.metrics();
+    const cx = this.crownX || M.w * 0.86;
+    const cy = this.crownY || M.hillTop - 60 * M.S;
+
+    this.time.delayedCall(delay, () => {
+      audio.save();
+      audio.setDanger(false);
+
+      // the wave — an expanding gold bloom that covers the scene
+      const wave = this.add
+        .image(cx, cy, 'glowpale')
+        .setBlendMode(Phaser.BlendModes.ADD)
+        .setTint(GOLD)
+        .setDisplaySize(30 * M.S, 30 * M.S)
+        .setDepth(45)
+        .setAlpha(0);
+      const w = { t: 0 };
+      this.tweens.add({
+        targets: w,
+        t: 1,
+        duration: 1100,
+        ease: 'Cubic.easeOut',
+        onUpdate: () => {
+          const d = 30 * M.S + 3 * Math.max(M.w, M.h) * w.t;
+          wave.setDisplaySize(d, d);
+          wave.setAlpha(0.55 * (w.t < 0.35 ? w.t / 0.35 : 1 - (w.t - 0.35) / 0.65));
+        },
+        onComplete: () => wave.destroy(),
+      });
+
+      // the swap, hidden inside the wave's crest
+      this.time.delayedCall(380, () => {
+        this.state = next;
+        this.serverNow = next.now;
+        this.serverDeadline = next.deadline;
+        this.fetchedAt = this.time.now;
+        this.inDanger = false;
+        this.chill = 0;
+        this.render();
+        // the garlands breathe back in rather than snapping on
+        this.bg.setAlpha(0.25);
+        this.tweens.add({ targets: this.bg, alpha: 1, duration: 700, ease: 'Sine.easeOut' });
+        if (this.moonHalo) {
+          this.tweens.add({
+            targets: this.moonHalo,
+            alpha: 0.3,
+            duration: 450,
+            yoyo: true,
+            ease: 'Sine.easeOut',
+            onComplete: () => this.moonHalo?.setAlpha(0.14),
+          });
+        }
+        this.time.delayedCall(420, () => this.glintNotch(next));
+      });
+
+      // the words, floating up off the lantern
+      this.time.delayedCall(820, () => {
+        const line = this.add
+          .text(cx, cy - 46 * M.S, 'Mended in gold.', {
+            fontFamily: FONT_DISPLAY,
+            fontStyle: '800',
+            fontSize: 16 * M.S,
+            color: hex(GOLD),
+          })
+          .setOrigin(0.5)
+          .setDepth(52)
+          .setAlpha(0);
+        line.setShadow(0, 2, 'rgba(8,5,16,0.85)', 10, false, true);
+        this.tweens.add({ targets: line, alpha: 1, duration: 450, yoyo: true, hold: 1300 });
+        this.tweens.add({
+          targets: line,
+          y: cy - 68 * M.S,
+          duration: 2300,
+          ease: 'Sine.easeOut',
+          onComplete: () => line.destroy(),
+        });
+      });
+
+      this.time.delayedCall(2600, () => {
+        this.saving = false;
+      });
+    });
+  }
+
+  // Three quick gold pulses on the newest notch — the scar announcing itself.
+  // Slot 0 (nearest today's lantern) always holds the most recent save.
+  private glintNotch(s: State) {
+    const saves = Math.min(s.saves ?? 0, 5);
+    if (saves === 0) return;
+    const M = this.metrics();
+    const t = NOTCH_T0;
+    const pt = this.quadPoint(this.ropeS, this.ropeM, this.ropeE, t);
+    for (let i = 0; i < 3; i++) {
+      this.time.delayedCall(i * 240, () => {
+        const gl = this.add
+          .image(pt.x, pt.y, 'glowpale')
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setTint(GOLD)
+          .setDisplaySize(6 * M.S, 6 * M.S)
+          .setDepth(31)
+          .setAlpha(0.9);
+        this.tweens.add({
+          targets: gl,
+          displayWidth: 26 * M.S,
+          displayHeight: 26 * M.S,
+          alpha: 0,
+          duration: 380,
+          ease: 'Quad.easeOut',
+          onComplete: () => gl.destroy(),
+        });
+      });
+    }
+  }
+
   private remainingMs(): number {
     if (!this.state) return 0;
     const elapsed = this.time.now - this.fetchedAt;
@@ -551,6 +733,8 @@ export class Game extends Scene {
 
   private tickCountdown() {
     if (this.shattering) return; // the sequence owns the screen; freeze the clock
+    // the low heartbeat while the ember gutters (Beat B's sound)
+    audio.setDanger(this.inDanger && this.chill > 0.45 && !this.saving);
     const rem = this.remainingMs();
     const blink = this.inDanger && Math.floor(this.time.now / 500) % 2 === 0;
     if (this.timerText) {
@@ -753,6 +937,7 @@ export class Game extends Scene {
     this.drawCountdownPill(M, rem, danger);
     this.drawButton(M, s);
     this.positionAmbient(M, chill);
+    this.muteBtn?.setPosition(M.w - 10 * M.S, M.Y(16)).setFontSize(13 * M.S);
 
     if (s.dev) {
       // playtest-only controls — parked at the very top (clear night sky) so they
@@ -927,6 +1112,24 @@ export class Game extends Scene {
     g.strokePath();
   }
 
+  // A single point on the quadratic at t (the rope's parametrization).
+  private quadPoint(p0: Pt, c: Pt, p1: Pt, t: number): Pt {
+    const a = 1 - t;
+    return {
+      x: a * a * p0.x + 2 * a * t * c.x + t * t * p1.x,
+      y: a * a * p0.y + 2 * a * t * c.y + t * t * p1.y,
+    };
+  }
+
+  // The unit tangent of the quadratic at t — the rope's local direction, used to
+  // lay the gold notch bands along the line.
+  private quadTangent(p0: Pt, c: Pt, p1: Pt, t: number): Pt {
+    const dx = 2 * (1 - t) * (c.x - p0.x) + 2 * t * (p1.x - c.x);
+    const dy = 2 * (1 - t) * (c.y - p0.y) + 2 * t * (p1.y - c.y);
+    const len = Math.hypot(dx, dy) || 1;
+    return { x: dx / len, y: dy / len };
+  }
+
   // A lush silhouette tree: trunk + branch strokes + clustered-circle canopies.
   private drawTree(g: Phaser.GameObjects.Graphics, M: Metrics, bx: number, by: number, s: number, seed: number, chill: number) {
     const dark = this.mix(TREE, TREE_COLD, chill);
@@ -1036,7 +1239,41 @@ export class Game extends Scene {
     this.strokeQuad(ropeG, geom.rope.s, geom.rope.m, geom.rope.e, 24);
     this.root.add(ropeG);
 
+    // gold notches — one per save (Beat C), whipped around the rope BETWEEN the
+    // lantern cords (newest closest to today's lantern). The kintsugi scars: the
+    // days this chain nearly died, mended in gold. Capped like the graveyard.
+    const nSaves = Math.min(s.saves ?? 0, 5);
+    if (nSaves > 0) {
+      const notchG = this.add.graphics();
+      for (let i = 0; i < nSaves; i++) {
+        const t = NOTCH_T0 - i * NOTCH_DT;
+        const pt = this.quadPoint(geom.rope.s, geom.rope.m, geom.rope.e, t);
+        const dv = this.quadTangent(geom.rope.s, geom.rope.m, geom.rope.e, t);
+        const len = 3.6 * M.S;
+        const glint = this.add
+          .image(pt.x, pt.y, 'glowpale')
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setTint(GOLD)
+          .setDisplaySize(12 * M.S, 12 * M.S)
+          .setAlpha(0.32 * (1 - chill * 0.65));
+        this.root.add(glint);
+        // the wrap: a short thick band along the rope + a catch-light
+        notchG.lineStyle(3.4 * M.S, GOLD, 0.95);
+        notchG.beginPath();
+        notchG.moveTo(pt.x - dv.x * len, pt.y - dv.y * len);
+        notchG.lineTo(pt.x + dv.x * len, pt.y + dv.y * len);
+        notchG.strokePath();
+        notchG.lineStyle(1 * M.S, 0xffe9b0, 0.9);
+        notchG.beginPath();
+        notchG.moveTo(pt.x - dv.x * len * 0.6, pt.y - dv.y * len * 0.6 - 0.9 * M.S);
+        notchG.lineTo(pt.x + dv.x * len * 0.5, pt.y + dv.y * len * 0.5 - 0.9 * M.S);
+        notchG.strokePath();
+      }
+      this.root.add(notchG);
+    }
+
     const recapGroups: Phaser.GameObjects.GameObject[][] = [];
+    this.recapPts = [];
 
     // streak lanterns (receding), oldest last
     for (const lan of geom.streak) {
@@ -1052,6 +1289,7 @@ export class Game extends Scene {
       objs.push(cord);
       this.chochin(M, lan, chill, objs);
       recapGroups.push(objs);
+      this.recapPts.push({ x: lan.cx, y: lan.topY + lan.h * 0.55 });
     }
 
     // today's lantern — biggest, brightest, named
@@ -1067,6 +1305,7 @@ export class Game extends Scene {
     tObjs.push(tcord);
     this.chochin(M, today, chill, tObjs);
     recapGroups.push(tObjs);
+    this.recapPts.push({ x: today.cx, y: today.topY + today.h * 0.55 });
 
     // the flame core is where a poured link's spark lands
     const centerY = today.topY + today.h * 0.55;
@@ -1082,13 +1321,42 @@ export class Game extends Scene {
       this.groundBaseAlpha = today.warm > 0.05 ? 0.42 * (1 - 0.5 * chill) : 0.05;
     }
 
-    // Opening recap: lanterns light one-by-one along the rope (~70ms stagger).
+    // Opening recap: lanterns light one-by-one along the rope. Each landing gets a
+    // small flare + a pluck climbing a pentatonic ladder; the Day numeral ticks in
+    // the same rhythm (drawHeader uses the same RECAP_STAGGER).
     if (doRecap) {
-      const stagger = 70;
       for (let i = 0; i < recapGroups.length; i++) {
         const grp = recapGroups[i]!;
         for (const o of grp) (o as unknown as Phaser.GameObjects.Components.Alpha).setAlpha(0);
-        this.tweens.add({ targets: grp, alpha: 1, delay: i * stagger, duration: 260, ease: 'Quad.easeOut' });
+        this.tweens.add({
+          targets: grp,
+          alpha: 1,
+          delay: i * RECAP_STAGGER,
+          duration: 300,
+          ease: 'Quad.easeOut',
+        });
+        const pt = this.recapPts[i];
+        if (pt) {
+          this.time.delayedCall(i * RECAP_STAGGER + 60, () => {
+            audio.recapPluck(i);
+            const flare = this.add
+              .image(pt.x, pt.y, 'glowpale')
+              .setBlendMode(Phaser.BlendModes.ADD)
+              .setTint(BULB_HALO)
+              .setDisplaySize(8 * M.S, 8 * M.S)
+              .setDepth(30)
+              .setAlpha(0.85);
+            this.tweens.add({
+              targets: flare,
+              displayWidth: 30 * M.S,
+              displayHeight: 30 * M.S,
+              alpha: 0,
+              duration: 420,
+              ease: 'Quad.easeOut',
+              onComplete: () => flare.destroy(),
+            });
+          });
+        }
       }
     }
   }
@@ -1323,7 +1591,7 @@ export class Game extends Scene {
       this.tweens.add({
         targets: ticker,
         v: numeral,
-        duration: Math.max(300, (Math.min(s.streak, 8) + 1) * 70),
+        duration: Math.max(300, (Math.min(s.streak, 8) + 1) * RECAP_STAGGER),
         ease: 'Quad.easeOut',
         onUpdate: () => day.setText(`Day ${Math.round(ticker.v)}`),
         onComplete: () => day.setText(`Day ${numeral}`),
@@ -1659,6 +1927,7 @@ export class Game extends Scene {
     this.shattering = true;
     this.pouring = false;
     this.inDanger = false;
+    audio.setDanger(false); // the heartbeat stops — 900ms of true stillness
     const M = this.metrics();
     this.shardFloorY = M.groundY + M.Y(30);
 
@@ -1742,6 +2011,7 @@ export class Game extends Scene {
     M: Metrics
   ) {
     const count = geom.streak.length + 1;
+    audio.shatter();
     this.cameras.main.shake(600, Math.min(0.03, 0.006 + count * 0.0016));
     this.root.setVisible(false); // falling lanterns replace the standing chain
     fray.destroy();
