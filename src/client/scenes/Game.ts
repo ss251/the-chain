@@ -126,12 +126,17 @@ type Lantern = {
 type Metrics = {
   w: number;
   h: number;
-  S: number; // uniform size scale (width / 375)
-  X: (v: number) => number; // mock-x (of 375) -> screen-x
-  Y: (v: number) => number; // mock-y (of 640) -> screen-y
+  S: number;
+  X: (v: number) => number;
+  Y: (v: number) => number;
   horizonY: number;
   hillTop: number;
   groundY: number;
+  // bottom-docked UI cluster anchors (fixed rhythm from the bottom edge up)
+  btnY: number;
+  pillY: number;
+  pipY: number;
+  stateY: number;
 };
 
 type Pt = { x: number; y: number };
@@ -179,6 +184,8 @@ export class Game extends Scene {
   // the state line is scene-level (high depth) so geometry/particles never strike it,
   // and so the tick can refresh the danger banner between polls.
   private stateLine: Phaser.GameObjects.Text | null = null;
+  // measured bounds of the KEEPERS TODAY block — garland bulbs dodge this rect
+  private rosterRect: { x0: number; y0: number; x1: number; y1: number } | null = null;
   // pip containers (one per goal slot) so Beat A can pop the just-lit one.
   private pips: Phaser.GameObjects.Container[] = [];
   // the live rope endpoints (set each render) so Beat D can fray the exact curve.
@@ -627,7 +634,17 @@ export class Game extends Scene {
     const S = w / 375;
     const X = (v: number) => (v / 375) * w;
     const Y = (v: number) => (v / 640) * h;
-    return { w, h, S, X, Y, horizonY: Y(398), hillTop: Y(446), groundY: Y(462) };
+    // The UI cluster docks to the BOTTOM edge with a fixed rhythm, and the hill
+    // anchors to the cluster top — so the scene and the controls always meet,
+    // whatever height the devvit modal leaves us (its header steals space).
+    const btnY = h - (42 + 16) * S; // button top (lip adds +4S below)
+    const pillY = btnY - 26 * S; // countdown pill center
+    const pipY = pillY - 36 * S; // lantern pips center
+    const stateY = pipY - 32 * S; // state line center
+    const hillTop = stateY - 52 * S; // the crest the state line sits under
+    const groundY = hillTop + 16 * S;
+    const horizonY = hillTop - 48 * S;
+    return { w, h, S, X, Y, horizonY, hillTop, groundY, btnY, pillY, pipY, stateY };
   }
 
   // ── geometry: the lanterns on the rope (the record pour/shatter read) ───────────
@@ -641,9 +658,9 @@ export class Game extends Scene {
     M: Metrics
   ): ChainGeom {
     const poleX = M.w * 0.86;
-    const s = { x: M.X(-46), y: M.Y(444) }; // hillTop - 2
-    const m = { x: M.w * 0.36, y: M.Y(380) }; // hillTop - 66
-    const e = { x: poleX, y: M.Y(334) }; // poleTop + 6
+    const s = { x: M.X(-46), y: M.hillTop - 2 * M.S };
+    const m = { x: M.w * 0.36, y: M.hillTop - 66 * M.S };
+    const e = { x: poleX, y: M.hillTop - 106 * M.S };
     const rp = (t: number) => {
       const a = 1 - t;
       return {
@@ -715,8 +732,10 @@ export class Game extends Scene {
 
     const doRecap = !this.hasPlayedRecap && s.streak > 1;
 
-    // world -> garlands -> chain -> keepers -> UI
+    // world -> roster (measured first so garland bulbs can dodge its pixels)
+    // -> garlands -> chain -> keepers -> UI
     this.drawWorld(M, chill);
+    this.drawKeepersToday(M, s, chill);
     this.drawGarlands(M, chill);
     this.drawChain(M, s, chill, doRecap);
     this.drawKeeperFigures(M, s, chill);
@@ -725,7 +744,6 @@ export class Game extends Scene {
     // header: eyebrow + Day numeral. The numeral counts the day THIS chain is living
     // (first day = Day 1), which equals the number of lanterns on the rope.
     this.drawHeader(M, s, doRecap);
-    this.drawKeepersToday(M, s, chill);
     this.drawHanko(M, chill);
     if (s.streak > 8) this.drawOverHill(M, s, chill);
 
@@ -805,7 +823,7 @@ export class Game extends Scene {
     // ── the moon, giant and low, BEHIND the ridges ──
     const moonR = 104 * M.S;
     const moonX = M.w * 0.42;
-    const moonY = M.Y(258);
+    const moonY = Math.max(150 * M.S, M.horizonY - 140 * M.S);
     this.moonHalo
       ?.setPosition(moonX, moonY)
       .setDisplaySize(moonR * 3.2, moonR * 3.2)
@@ -955,7 +973,11 @@ export class Game extends Scene {
         const by = a * a * y0 + 2 * a * t * my + t * t * y1 + 2.5 * M.S;
         const lit = cold ? i % 3 === 0 : true; // in danger most bulbs are out
         const br = bulbR * (0.8 + rnd(seed + i) * 0.5);
-        if (lit) {
+        // bulbs never blaze over the KEEPERS TODAY words — inside the roster
+        // rect they keep a dim core only (the string still passes behind)
+        const R = this.rosterRect;
+        const shy = !!R && bx > R.x0 && bx < R.x1 && by > R.y0 && by < R.y1;
+        if (lit && !shy) {
           const glow = this.add
             .image(bx, by, 'glowpale')
             .setBlendMode(Phaser.BlendModes.ADD)
@@ -964,10 +986,12 @@ export class Game extends Scene {
             .setAlpha(0.5 * dim * (1 - chill * 0.65));
           this.bg.add(glow);
           coreG.fillStyle(i % 4 === 0 ? BULB_HOT : BULB_WARM, (0.85 + rnd(i) * 0.15) * dim);
+        } else if (lit) {
+          coreG.fillStyle(BULB_WARM, 0.35 * dim);
         } else {
           coreG.fillStyle(BULB_DEAD, 0.8);
         }
-        coreG.fillCircle(bx, by, br);
+        coreG.fillCircle(bx, by, shy ? br * 0.75 : br);
       }
     };
 
@@ -985,7 +1009,7 @@ export class Game extends Scene {
     this.ropeE = geom.rope.e;
 
     const poleX = M.w * 0.86;
-    const poleTop = M.Y(328);
+    const poleTop = M.hillTop - 112 * M.S;
 
     // pole: weathered wood + crossbar + warm rim light
     const poleG = this.add.graphics();
@@ -1166,8 +1190,10 @@ export class Game extends Scene {
       objs.push(tas);
     }
 
-    // the keeper's name painted on the paper
-    if (name && w > 30 * M.S) {
+    // the keeper's name painted on the paper — only once the lantern is lit
+    // (dark ink on dark paper reads as a smudge, and an unpoured lantern has
+    // no keeper yet)
+    if (name && w > 30 * M.S && warm > 0.05) {
       const nm = name.length > 10 ? name.slice(0, 9) + '…' : name;
       const t = this.add
         .text(cx, y + h * 0.42, nm.toUpperCase(), {
@@ -1192,7 +1218,9 @@ export class Game extends Scene {
     for (let k = 0; k < nK; k++) {
       const side = k % 2 === 0 ? -1 : 1;
       const kx = M.w * 0.5 + side * (46 + rnd(k * 7) * 58) * M.S;
-      const ky = M.groundY + (34 + rnd(k * 11) * 16) * M.S;
+      // stand on the crest, above the state line (stateY = hillTop + 52S):
+      // deepest figure base stays ~12S clear of the text
+      const ky = M.hillTop + (22 + rnd(k * 11) * 10) * M.S;
       const sc = (1.05 + rnd(k * 5) * 0.35) * M.S;
 
       // hand-lantern halo (additive)
@@ -1238,7 +1266,9 @@ export class Game extends Scene {
       const f = list[j]!;
       const depth = list.length - j; // oldest (j=0) sits deepest
       const g = this.add.graphics().setDepth(-3);
-      const baseY = M.groundY + M.Y(30) + depth * M.Y(5);
+      // husks hug the crest below the figures — the zone under the state line
+      // now belongs to the UI cluster (pips/pill/button)
+      const baseY = M.hillTop + (26 + depth * 3) * M.S;
       const husks = Math.min(7, 3 + Math.floor(f.days / 2));
       const spread = Math.min(M.w * 0.7, (66 + f.days * 4) * M.S);
       for (let k = 0; k < husks; k++) {
@@ -1304,6 +1334,7 @@ export class Game extends Scene {
   // Top-right roster label: KEEPERS TODAY + the names joined.
   private drawKeepersToday(M: Metrics, s: State, chill: number) {
     const keepers = s.keepers ?? [];
+    this.rosterRect = null;
     if (keepers.length === 0) return;
     const cold = chill > 0.5;
     const rightX = M.w - M.X(16);
@@ -1330,15 +1361,27 @@ export class Game extends Scene {
       })
       .setOrigin(1, 0.5)
       .setAlpha(cold ? 0.95 : 0.98);
+    names.setShadow(0, 2, 'rgba(8,5,16,0.8)', 8, false, true);
     this.fit(names, M.w * 0.66);
     this.root.add(names);
+
+    // remember where the words live, padded by roughly a bulb-halo radius, so
+    // drawGarlands can keep its bright bulbs out of the label's pixels
+    const hb = header.getBounds();
+    const nb = names.getBounds();
+    this.rosterRect = {
+      x0: Math.min(hb.left, nb.left) - 10 * M.S,
+      y0: hb.top - 7 * M.S,
+      x1: Math.max(hb.right, nb.right) + 10 * M.S,
+      y1: nb.bottom + 7 * M.S,
+    };
   }
 
   // The hanko (lock seal) — a small vermillion square with the 鎖 glyph.
   private drawHanko(M: Metrics, chill: number) {
     const cold = chill > 0.5;
     const hx = M.X(30);
-    const hy = M.Y(468);
+    const hy = M.hillTop + 10 * M.S;
     const hw = 24 * M.S;
     const g = this.add.graphics().setDepth(4);
     g.fillStyle(cold ? this.mix(HANKO, 0x6d5a5e, chill * 0.7) : HANKO, 1);
@@ -1399,7 +1442,7 @@ export class Game extends Scene {
     }
     const display = danger ? text : text.charAt(0).toUpperCase() + text.slice(1);
     const t = this.add
-      .text(M.w / 2, M.Y(522), display, {
+      .text(M.w / 2, M.stateY, display, {
         fontFamily: FONT_LABEL,
         fontStyle: weight,
         fontSize: 13 * M.S,
@@ -1421,7 +1464,7 @@ export class Game extends Scene {
     const cold = chill > 0.5;
     const pipN = s.goal;
     const pipGap = 34 * M.S;
-    const pipY = M.Y(550);
+    const pipY = M.pipY;
     for (let i = 0; i < pipN; i++) {
       const px = M.w / 2 + (i - (pipN - 1) / 2) * pipGap;
       const lit = i < s.count;
@@ -1477,7 +1520,7 @@ export class Game extends Scene {
   private drawCountdownPill(M: Metrics, rem: number, danger: boolean) {
     const cw = 92 * M.S;
     const ch = 24 * M.S;
-    const cy = M.Y(584);
+    const cy = M.pillY;
     const g = this.add.graphics().setDepth(49);
     g.fillStyle(0x0a0816, 0.55);
     g.fillRoundedRect(M.w / 2 - cw / 2, cy - ch / 2, cw, ch, 12 * M.S);
@@ -1504,7 +1547,7 @@ export class Game extends Scene {
     const bw = 252 * M.S;
     const bh = 42 * M.S;
     const bx = M.w / 2 - bw / 2;
-    const by = M.Y(596);
+    const by = M.btnY;
     const r = 21 * M.S;
 
     if (!disabled) {

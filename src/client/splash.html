@@ -7,26 +7,30 @@
       name="viewport"
       content="initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, width=device-width, height=device-height, user-scalable=0"
     />
-    <title>devvit</title>
+    <title>The Chain</title>
   </head>
   <body class="app">
-    <img class="snoo" src="/snoo.png" alt="Snoo" />
-    <div class="content">
-      <h1 class="title" id="title"></h1>
-      <p class="description">
-        One link a day, together, or the chain breaks for everyone.
-      </p>
+    <div class="night">
+      <div class="stars"></div>
+      <div class="moon"></div>
+      <!-- the lantern lives inside the rope so it hangs exactly on the line
+           at any card height (and inherits the rope's gentle tilt) -->
+      <div class="rope">
+        <div class="lantern">
+          <div class="cord"></div>
+          <div class="paper"></div>
+          <div class="cap"></div>
+          <div class="base"></div>
+          <div class="tassel"></div>
+        </div>
+      </div>
+      <div class="hill"></div>
     </div>
-    <div>
+    <div class="content">
+      <h1 class="title" id="title">The Chain</h1>
+      <p class="description">One link a day, together,<br />or the chain breaks for everyone.</p>
       <button class="start-button" id="start-button">Enter</button>
     </div>
-    <footer class="footer">
-      <div class="docs-link" tabindex="0" id="docs-link">Docs</div>
-      <span class="divider">|</span>
-      <div class="docs-link" tabindex="0" id="playtest-link">r/Devvit</div>
-      <span class="divider">|</span>
-      <div class="docs-link" tabindex="0" id="discord-link">Discord</div>
-    </footer>
     <script type="module" src="splash.ts" defer></script>
   </body>
 </html>

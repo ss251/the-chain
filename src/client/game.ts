@@ -56,6 +56,14 @@ async function bootWhenFontsReady(parent: string) {
     console.error('font preload failed, booting with fallbacks', err);
   }
   StartGame(parent);
+  // hand off from the kindling screen once the scene is painting
+  const kindling = document.getElementById('kindling');
+  if (kindling) {
+    window.setTimeout(() => {
+      kindling.classList.add('done');
+      window.setTimeout(() => kindling.remove(), 500);
+    }, 350);
+  }
 }
 
 document.addEventListener('DOMContentLoaded', () => {

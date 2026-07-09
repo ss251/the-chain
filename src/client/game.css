@@ -79,3 +79,97 @@ body {
   width: 100%;
   height: 100%;
 }
+
+
+/* ── the kindling screen: instant festival night while Phaser boots ─────────── */
+#kindling {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  background: linear-gradient(180deg, #141a38 0%, #2a2456 45%, #4a3168 78%, #7a4a63 100%);
+  transition: opacity 0.45s ease;
+}
+#kindling.done {
+  opacity: 0;
+  pointer-events: none;
+}
+/* The lantern is the same squat chochin the game draws (today's lantern is
+   54x44 design units — wider than tall): cap ~52% of the paper width, base
+   ~44%, three bamboo ribs at quarter heights (#a34d12 @ .4), gold tassel with
+   a vermillion bead. Keep in sync with chochin() in scenes/Game.ts. */
+.k-lantern {
+  position: relative;
+  width: 84px;
+  height: 76px;
+}
+.k-cap,
+.k-base {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #1a1226;
+}
+.k-cap {
+  top: 0;
+  width: 36px;
+  height: 7px;
+  border-radius: 3.5px;
+}
+.k-base {
+  top: 56px;
+  width: 31px;
+  height: 6px;
+  border-radius: 3px;
+}
+.k-paper {
+  position: absolute;
+  left: 50%;
+  top: 4px;
+  transform: translateX(-50%);
+  width: 84px;
+  height: 56px;
+  border-radius: 48% / 50%;
+  background:
+    repeating-linear-gradient(180deg, transparent 0 13px, rgba(163, 77, 18, 0.4) 13px 14px),
+    linear-gradient(180deg, #ffe6ae 0%, #ffc670 55%, #f29245 100%);
+  box-shadow: 0 0 30px 9px rgba(255, 178, 68, 0.42), inset 0 -6px 12px rgba(160, 80, 20, 0.35);
+  animation: k-breathe 2.2s ease-in-out infinite;
+}
+.k-tassel {
+  position: absolute;
+  left: 50%;
+  top: 61px;
+  width: 2px;
+  height: 6px;
+  background: #d4af37;
+  opacity: 0.8;
+  transform: translateX(-50%);
+}
+.k-tassel::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -5px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #c73e2e;
+  transform: translateX(-50%);
+}
+@keyframes k-breathe {
+  0%, 100% { box-shadow: 0 0 30px 9px rgba(255, 178, 68, 0.42), inset 0 -6px 12px rgba(160, 80, 20, 0.35); }
+  50% { box-shadow: 0 0 42px 13px rgba(255, 178, 68, 0.58), inset 0 -6px 12px rgba(160, 80, 20, 0.35); }
+}
+.k-line {
+  margin: 0;
+  font-family: 'Nunito', sans-serif;
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.4px;
+  color: rgba(244, 236, 222, 0.75);
+}
