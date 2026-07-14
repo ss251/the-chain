@@ -8,6 +8,21 @@ import type {
   InitResponse,
 } from '../../shared/api';
 
+// Feel: one earned buzz per beat — pour lands, save, shatter — nothing else.
+// Android webviews vibrate; everywhere else this is a silent no-op. And the OS
+// "reduce motion" setting kills the two camera shakes (the game's only
+// vestibular triggers); the light, the cold, and the gold are content, and stay.
+const REDUCED_MOTION =
+  typeof window !== 'undefined' &&
+  window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true;
+const buzz = (pattern: number | number[]) => {
+  try {
+    navigator.vibrate?.(pattern);
+  } catch {
+    /* unsupported — fine */
+  }
+};
+
 // The Chain's single scene: shared once-a-day, one-tap loop, rendered code-only
 // (Phaser shapes/gradients/tweens/particles — no image assets). This is the
 // "Lantern Festival" pass. The world is a warm Obon night: a giant low moon behind
@@ -454,7 +469,8 @@ export class Game extends Scene {
       duration: 500,
       onComplete: () => {
         spark.destroy();
-        this.cameras.main.shake(100, 0.002);
+        if (!REDUCED_MOTION) this.cameras.main.shake(100, 0.002);
+        buzz(12); // the link lands — felt on the same frame it's heard
         audio.pour(data.count, data.goal); // the chord that grows, one note per link
         this.bloomLantern(data, M, tx, ty);
       },
@@ -608,6 +624,7 @@ export class Game extends Scene {
 
     this.time.delayedCall(delay, () => {
       audio.save();
+      buzz([10, 30, 14]); // mended in gold — a double-tap, not a rumble
       audio.setDanger(false);
 
       // the wave — an expanding gold bloom that covers the scene
@@ -2012,7 +2029,8 @@ export class Game extends Scene {
   ) {
     const count = geom.streak.length + 1;
     audio.shatter();
-    this.cameras.main.shake(600, Math.min(0.03, 0.006 + count * 0.0016));
+    buzz(40); // the snap — the one heavy haptic the game ever fires
+    if (!REDUCED_MOTION) this.cameras.main.shake(600, Math.min(0.03, 0.006 + count * 0.0016));
     this.root.setVisible(false); // falling lanterns replace the standing chain
     fray.destroy();
 
