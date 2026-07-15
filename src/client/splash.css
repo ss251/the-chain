@@ -78,7 +78,10 @@ body {
   position: absolute;
   left: -10%;
   right: -10%;
-  top: 46%;
+  /* anchored to the moon (top 34% + 72% of its actual size) so the line always
+     crosses its lower quarter — a viewport % bisected the moon on tall embeds
+     and read as a stuck loading bar */
+  top: calc(34% + min(46vmin, 300px) * 0.72);
   height: 2px;
   background: linear-gradient(90deg, transparent, #deba5aa8 20%, #deba5aa8 80%, transparent);
   transform: rotate(-7deg);
@@ -89,7 +92,7 @@ body {
    three bamboo ribs at quarter heights, gold tassel + vermillion bead */
 .lantern {
   position: absolute;
-  left: 68%;
+  left: 74%;
   top: 1px;
   width: 96px;
   height: 88px;
